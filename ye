@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# barebash - minimal script launcher inspired by Yeoman
+# Author: Hervé Balderacchi
+
+SCRIPTS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../scripts"
+
+# --- Command logic ---
+ye_run() {
+    local script="$1"
+    shift
+    if [[ -z "$script" ]]; then
+        echo "Usage: ye <script> [edit|args]"
+        return 1
+    fi
+
+    local path="$SCRIPTS_DIR/$script.sh"
+    if [[ ! -f "$path" ]]; then
+        echo "❌ Script not found: $path"
+        return 1
+    fi
+
+    if [[ "$1" == "edit" ]]; then
+        ${EDITOR:-vim} "$path"
+    else
+        bash "$path" "$@"
+    fi
+}
+
+# --- Autocompletion ---
+_ye_complete() {
+    local cur prev words cword
+    _init_completion || return
+
+    local opts=()
+    for f in "$SCRIPTS_DIR"/*.sh; do
+        [[ -e "$f" ]] && opts+=("$(basename "${f%.sh}")")
+    done
+
+    if [[ ${#COMP_WORDS[@]} -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W "${opts[*]}" -- "$cur") )
+    elif [[ ${#COMP_WORDS[@]} -eq 3 ]]; then
+        COMPREPLY=( $(compgen -W "edit" -- "$cur") )
+    fi
+}
+
+complete -F _ye_complete ye
+
+ye_run "$@"
