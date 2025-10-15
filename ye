@@ -26,23 +26,27 @@ ye_run() {
     fi
 }
 
-# --- Autocompletion ---
+# completion/ye.bash
 _ye_complete() {
-    local cur prev words cword
-    _init_completion || return
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
 
+    local scripts_dir="${SCRIPTS_DIR:-$HOME/barebash/scripts}"
     local opts=()
-    for f in "$SCRIPTS_DIR"/*.sh; do
+
+    # List all available .sh scripts
+    for f in "$scripts_dir"/*.sh; do
         [[ -e "$f" ]] && opts+=("$(basename "${f%.sh}")")
     done
 
-    if [[ ${#COMP_WORDS[@]} -eq 2 ]]; then
+    # Completion rules
+    if [[ $COMP_CWORD -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${opts[*]}" -- "$cur") )
-    elif [[ ${#COMP_WORDS[@]} -eq 3 ]]; then
+    elif [[ $COMP_CWORD -eq 2 && " ${opts[*]} " =~ " ${prev} " ]]; then
         COMPREPLY=( $(compgen -W "edit" -- "$cur") )
     fi
 }
-
 complete -F _ye_complete ye
 
 ye_run "$@"
