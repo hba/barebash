@@ -2,7 +2,7 @@
 # barebash - minimal script launcher inspired by Yeoman
 # Author: Hervé Balderacchi
 
-SCRIPTS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../scripts"
+SCRIPTS_DIR="${SCRIPTS_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../scripts]}"
 
 # --- Command logic ---
 ye_run() {
