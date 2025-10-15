@@ -1,52 +1,46 @@
 #!/usr/bin/env bash
-# barebash - minimal script launcher inspired by Yeoman
+# barebash - minimal script launcher with auto-create feature
 # Author: Hervé Balderacchi
 
-SCRIPTS_DIR="${SCRIPTS_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../scripts]}"
+# Use env var if set, fallback to local scripts dir
+SCRIPTS_DIR="${SCRIPTS_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../scripts}"
 
-# --- Command logic ---
 ye_run() {
     local script="$1"
     shift
+
     if [[ -z "$script" ]]; then
         echo "Usage: ye <script> [edit|args]"
         return 1
     fi
 
     local path="$SCRIPTS_DIR/$script.sh"
+
+    # 🧠 If the script doesn't exist, offer to create it
     if [[ ! -f "$path" ]]; then
-        echo "❌ Script not found: $path"
-        return 1
+        echo "⚠️  Script not found: $path"
+        read -p "Would you like to create it? [y/N] " choice
+        if [[ "$choice" =~ ^[Yy]$ ]]; then
+            mkdir -p "$SCRIPTS_DIR"
+            echo "#!/usr/bin/env bash" > "$path"
+            echo "" >> "$path"
+            chmod +x "$path"
+            echo "✅ Created new script: $path"
+            ${EDITOR:-vim} "$path"
+        else
+            echo "❌ Aborted."
+        fi
+        return 0
     fi
 
+    # 🧩 If 'edit' argument is used
     if [[ "$1" == "edit" ]]; then
         ${EDITOR:-vim} "$path"
-    else
-        bash "$path" "$@"
+        return 0
     fi
+
+    # 🧱 Otherwise execute the script
+    bash "$path" "$@"
 }
-
-# completion/ye.bash
-_ye_complete() {
-    local cur prev
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-
-    local scripts_dir="${SCRIPTS_DIR:-$HOME/barebash/scripts}"
-    local opts=()
-
-    # List all available .sh scripts
-    for f in "$scripts_dir"/*.sh; do
-        [[ -e "$f" ]] && opts+=("$(basename "${f%.sh}")")
-    done
-
-    # Completion rules
-    if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "${opts[*]}" -- "$cur") )
-    elif [[ $COMP_CWORD -eq 2 && " ${opts[*]} " =~ " ${prev} " ]]; then
-        COMPREPLY=( $(compgen -W "edit" -- "$cur") )
-    fi
-}
-complete -F _ye_complete ye
 
 ye_run "$@"
