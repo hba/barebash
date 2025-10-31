@@ -3,7 +3,8 @@
 #  sync
 #  Synchronisation entre PC principal (Documents/Note)
 #  et PC client (Documents/Perso)
-#  → version fiable : archive encodée en Base64 dans un chunk PNG
+#  Nouvelle version sans pngcrush :
+#  → archive encodée en Base64 entre marqueurs ###SYNC_START### / ###SYNC_END###
 # ============================================================
 
 set -euo pipefail
@@ -42,19 +43,52 @@ check_file() {
 }
 
 cleanup_tmp() {
-  rm -f /tmp/sync_*.tar.gz /tmp/archive.b64 2>/dev/null || true
+  rm -f /tmp/sync_*.tar.gz /tmp/archive.b64 /tmp/extracted.tar.gz 2>/dev/null || true
 }
 
-require_tools() {
-  for cmd in pngcrush base64 tar; do
-    command -v "$cmd" >/dev/null 2>&1 || {
-      echo "❌ Outil manquant : $cmd"
-      exit 1
-    }
-  done
+# ------------------------------------------------------------
+# Fonctions communes d’encodage/décodage
+# ------------------------------------------------------------
+embed_archive_in_png() {
+  local base_img="$1"
+  local archive="$2"
+  local output="$3"
+  check_file "$base_img" || return
+  check_file "$archive" || return
+
+  echo "🧩 Insertion de l’archive encodée dans l’image..."
+  base64 "$archive" > /tmp/archive.b64
+  {
+    cat "$base_img"
+    echo ""
+    echo "###SYNC_START###"
+    cat /tmp/archive.b64
+    echo ""
+    echo "###SYNC_END###"
+  } > "$output"
+
+  echo "✅ Fusion terminée → $output"
 }
 
-require_tools
+extract_archive_from_png() {
+  local src="$1"
+  local dest_dir="$2"
+  check_file "$src" || return
+
+  echo "🧩 Extraction de la section encodée..."
+  awk '/###SYNC_START###/{flag=1;next}/###SYNC_END###/{flag=0}flag' "$src" > /tmp/archive.b64
+
+  if [[ ! -s /tmp/archive.b64 ]]; then
+    echo "❌ Aucune archive trouvée dans $src"
+    return 1
+  fi
+
+  echo "📦 Décodage et extraction..."
+  base64 -d /tmp/archive.b64 > /tmp/extracted.tar.gz
+  tar xzf /tmp/extracted.tar.gz -C "$dest_dir"
+  echo "✅ Extraction réussie vers $dest_dir"
+  cleanup_tmp
+}
 
 # ------------------------------------------------------------
 # Commandes PC principal
@@ -64,8 +98,6 @@ backupTmp() {
   cleanup_tmp
   local archive="/tmp/sync_tmp.tar.gz"
 
-  # --- Recherche des fichiers tmp*.md ---
-  local tmp_files
   tmp_files=$(find "$HOME/Documents/Note" -type f -name "tmp*.md")
   if [[ -z "$tmp_files" ]]; then
     echo "ℹ️  Aucun fichier tmp*.md trouvé, rien à sauvegarder."
@@ -73,26 +105,15 @@ backupTmp() {
   fi
 
   echo "$tmp_files" | tar czf "$archive" -T -
-
-  echo "📦 Encodage en Base64..."
-  base64 "$archive" > /tmp/archive.b64
-
-  local base_img="$HOME/Documents/Note/Images/sign.png"
-  local output="$HOME/Downloads/signt.png"
-  check_file "$base_img" || return
-
-  echo "🧩 Insertion dans le PNG (chunk SYNC_DATA)..."
-  pngcrush -q -text a "SYNC_DATA" "$(cat /tmp/archive.b64)" "$base_img" "$output"
-
-  echo "✅ Sauvegarde terminée → $output"
+  embed_archive_in_png "$HOME/Documents/Note/Images/sign.png" "$archive" "$HOME/Downloads/signt.png"
   cleanup_tmp
 }
 
 extract() {
   local src="$HOME/Downloads/sign.png"
   check_file "$src" || return
-
   echo "📁 Sélection du dossier de destination :"
+
   local dirs=("$HOME/Documents/Note/Zk"/*/)
   if [[ ${#dirs[@]} -eq 0 ]]; then
     echo "❌ Aucun dossier trouvé dans ~/Documents/Note/Zk/"
@@ -100,45 +121,16 @@ extract() {
   fi
 
   select dest in "${dirs[@]}"; do
-    if [[ -z "$dest" ]]; then
-      echo "❌ Choix invalide."
-      return
-    fi
-
-    echo "🧩 Extraction de l’archive Base64 depuis le PNG..."
-    pngcrush -q -extract text "$src" /tmp/texts.txt
-
-    if ! grep -q "keyword: SYNC_DATA" /tmp/texts.txt; then
-      echo "❌ Aucun champ SYNC_DATA trouvé dans $src"
-      return
-    fi
-
-    echo "📦 Décodage et extraction..."
-    grep -A9999 "keyword: SYNC_DATA" /tmp/texts.txt | tail -n +2 | base64 -d > /tmp/extracted.tar.gz
-    tar xzf /tmp/extracted.tar.gz -C "$dest"
-    echo "✅ Extraction réussie vers $dest"
+    [[ -z "$dest" ]] && echo "❌ Choix invalide." && return
+    extract_archive_from_png "$src" "$dest"
     break
   done
-
-  cleanup_tmp
 }
 
 extractMp3() {
   local src="$HOME/Downloads/signm.png"
   check_file "$src" || return
-
-  echo "🧩 Extraction de l’archive Base64 depuis $src..."
-  pngcrush -q -extract text "$src" /tmp/texts.txt
-
-  if ! grep -q "keyword: SYNC_DATA" /tmp/texts.txt; then
-    echo "❌ Aucun champ SYNC_DATA trouvé dans $src"
-    return
-  fi
-
-  grep -A9999 "keyword: SYNC_DATA" /tmp/texts.txt | tail -n +2 | base64 -d > /tmp/extracted.tar.gz
-  tar xzf /tmp/extracted.tar.gz -C "$HOME/Downloads/"
-  echo "✅ Fichiers MP3 extraits dans ~/Downloads/"
-  cleanup_tmp
+  extract_archive_from_png "$src" "$HOME/Downloads"
 }
 
 # ------------------------------------------------------------
@@ -149,11 +141,7 @@ backup() {
   cleanup_tmp
   local archive="/tmp/sync_zk.tar.gz"
   tar czf "$archive" -C "$HOME/Documents/Perso" Zk
-  base64 "$archive" > /tmp/archive.b64
-
-  echo "🧩 Insertion dans le PNG..."
-  pngcrush -q -text a "SYNC_DATA" "$(cat /tmp/archive.b64)" "$HOME/Documents/Perso/Images/sign.png" "$HOME/Downloads/sign.png"
-  echo "✅ Sauvegarde terminée → ~/Downloads/sign.png"
+  embed_archive_in_png "$HOME/Documents/Perso/Images/sign.png" "$archive" "$HOME/Downloads/sign.png"
   cleanup_tmp
 }
 
@@ -170,28 +158,14 @@ backupMp3() {
   fi
 
   echo "$mp3_list" | tar czf "$archive" -T -
-  base64 "$archive" > /tmp/archive.b64
-  pngcrush -q -text a "SYNC_DATA" "$(cat /tmp/archive.b64)" "$HOME/Documents/Perso/Images/sign.png" "$HOME/Downloads/signm.png"
-  echo "✅ Sauvegarde terminée → ~/Downloads/signm.png"
+  embed_archive_in_png "$HOME/Documents/Perso/Images/sign.png" "$archive" "$HOME/Downloads/signm.png"
   cleanup_tmp
 }
 
 extractTmp() {
   local src="$HOME/Downloads/signt.png"
   check_file "$src" || return
-
-  echo "🧩 Extraction de l’archive Base64 depuis $src..."
-  pngcrush -q -extract text "$src" /tmp/texts.txt
-
-  if ! grep -q "keyword: SYNC_DATA" /tmp/texts.txt; then
-    echo "❌ Aucun champ SYNC_DATA trouvé dans $src"
-    return
-  fi
-
-  grep -A9999 "keyword: SYNC_DATA" /tmp/texts.txt | tail -n +2 | base64 -d > /tmp/extracted.tar.gz
-  tar xzf /tmp/extracted.tar.gz -C "$HOME/Documents/Perso/Zk/"
-  echo "✅ Extraction réussie dans ~/Documents/Perso/Zk/"
-  cleanup_tmp
+  extract_archive_from_png "$src" "$HOME/Documents/Perso/Zk/"
 }
 
 # ------------------------------------------------------------
