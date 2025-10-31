@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/zsh
 # ============================================================
 #  sync
 #  Synchronisation entre PC principal (Documents/Note)
@@ -6,6 +6,7 @@
 # ============================================================
 
 set -euo pipefail
+setopt null_glob
 
 # ------------------------------------------------------------
 # Détection de l’environnement
@@ -26,28 +27,24 @@ fi
 # ------------------------------------------------------------
 # Fonctions utilitaires
 # ------------------------------------------------------------
-pause() {
+function pause() {
   echo ""
-  read -n 1 -s -r -p "Appuyez sur une touche pour revenir au menu..."
-  echo ""
+  read -s -k "?Appuyez sur une touche pour revenir au menu..."
 }
 
-check_file() {
+function check_file() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
-    echo "❌ Fichier introuvable : $file"
-    return 1
-  fi
+  [[ -f "$file" ]] || { echo "❌ Fichier introuvable : $file"; return 1; }
 }
 
-cleanup_tmp() {
+function cleanup_tmp() {
   rm -f /tmp/sync_*.tar.gz 2>/dev/null || true
 }
 
 # ------------------------------------------------------------
 # Commandes PC principal
 # ------------------------------------------------------------
-backupTmp() {
+function backupTmp() {
   echo "🔧 Création de l’archive temporaire..."
   cleanup_tmp
   local archive="/tmp/sync_tmp.tar.gz"
@@ -75,26 +72,21 @@ backupTmp() {
   cleanup_tmp
 }
 
-extract() {
+function extract() {
   local src="$HOME/Downloads/sign.png"
   check_file "$src" || return
   echo "📁 Sélection du dossier de destination :"
-
   select dest in "$HOME/Documents/Note/Zk"/*; do
-    if [[ -z "$dest" ]]; then
-      echo "❌ Choix invalide."
-      return
-    fi
+    [[ -n "$dest" ]] || { echo "❌ Choix invalide."; return; }
     echo "📦 Extraction vers : $dest"
     tail -n +1 "$src" | tar xzf - -C "$dest"
     echo "✅ Extraction réussie vers $dest"
     break
   done
-
   cleanup_tmp
 }
 
-extractMp3() {
+function extractMp3() {
   local src="$HOME/Downloads/signm.png"
   check_file "$src" || return
   echo "🎵 Extraction des fichiers MP3 vers ~/Downloads/"
@@ -106,7 +98,7 @@ extractMp3() {
 # ------------------------------------------------------------
 # Commandes PC client
 # ------------------------------------------------------------
-backup() {
+function backup() {
   echo "🗂  Sauvegarde du dossier Zk..."
   cleanup_tmp
   local archive="/tmp/sync_zk.tar.gz"
@@ -117,25 +109,23 @@ backup() {
   cleanup_tmp
 }
 
-backupMp3() {
+function backupMp3() {
   echo "🎧 Sauvegarde des MP3 de ~/Downloads..."
   cleanup_tmp
   local archive="/tmp/sync_mp3.tar.gz"
   local mp3_list
   mp3_list=$(find "$HOME/Downloads" -type f -name "*.mp3")
-
   if [[ -z "$mp3_list" ]]; then
     echo "ℹ️  Aucun fichier MP3 trouvé, rien à sauvegarder."
     return
   fi
-
   echo "$mp3_list" | tar czf "$archive" -T -
   cat "$HOME/Documents/Perso/Images/sign.png" "$archive" > "$HOME/Downloads/signm.png"
   echo "✅ Sauvegarde terminée → ~/Downloads/signm.png"
   cleanup_tmp
 }
 
-extractTmp() {
+function extractTmp() {
   local src="$HOME/Downloads/signt.png"
   check_file "$src" || return
   echo "📦 Extraction vers ~/Documents/Perso/Zk/"
@@ -157,7 +147,7 @@ while true; do
     echo "3) extractMp3 - Extraire signm.png vers le dossier ~/Downloads/"
     echo "q) Quitter"
     echo "------------------------------------------------------------"
-    read -rp "👉 Choix : " choice
+    read -r "?👉 Choix : " choice
     case "$choice" in
       1) backupTmp ;;
       2) extract ;;
@@ -172,7 +162,7 @@ while true; do
     echo "3) extractTmp - Extraire signt.png vers Perso/Zk/"
     echo "q) Quitter"
     echo "------------------------------------------------------------"
-    read -rp "👉 Choix : " choice
+    read -r "?👉 Choix : " choice
     case "$choice" in
       1) backup ;;
       2) backupMp3 ;;
